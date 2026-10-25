@@ -2,7 +2,7 @@
 #
 #   jobs:
 #     ci:
-#       uses: vexouLuna/conventions/.github/workflows/node-ci.yml@v2.2.0
+#       uses: vexouLuna/conventions/.github/workflows/node-ci.yml@v3.0.0
 #
 # Its jobs become the required checks `ci / lint`, `ci / test` and `ci / build`. Node comes from .nvmrc.
 # Each step runs the package script of the same name when there is one (lint, typecheck, test, build).
