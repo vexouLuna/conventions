@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Shared Renovate settings for vexouLuna repos. Extend with \"github>vexouLuna/conventions//renovate/default\".",
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "rangeStrategy": "bump",
   "branchPrefix": "chore/",
   "branchNameStrict": true,
@@ -16,12 +16,17 @@
       "datasourceTemplate": "github-tags"
     }
   ],
+  "github-actions": {
+    "description": "Actions by commit SHA and workflow service images by digest, the version kept as a comment. Dockerfile and compose images keep their tags for now.",
+    "pinDigests": true
+  },
   "packageRules": [
     {
-      "description": "The pin and every reusable workflow move together, in one PR. It fails `conventions / check` until someone runs `conventions sync` on the branch and pushes the result.",
+      "description": "The pin and every reusable workflow move together, in one PR, by tag: `conventions check` wants the `uses:` ref to equal the pinned version, so no digest. It fails `conventions / check` until someone runs `conventions sync` on the branch and pushes the result.",
       "matchDepNames": ["vEXOULZ/conventions", "vexouLuna/conventions"],
       "groupName": "conventions",
       "automerge": false,
+      "pinDigests": false,
       "prBodyNotes": [
         "Run `conventions sync` on this branch at the new version and push the result; until then `conventions / check` fails, as it should."
       ]

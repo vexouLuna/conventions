@@ -18,7 +18,8 @@ on:
 jobs:
   conventions:
     uses: vexouLuna/conventions/.github/workflows/conventions-check.yml@{PIN}
-    secrets: inherit
+    secrets:
+      CONVENTIONS_PRIVATE_PATTERNS: ${{{{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}}}
   ci:
     uses: vexouLuna/conventions/.github/workflows/python-ci.yml@{PIN}
 """

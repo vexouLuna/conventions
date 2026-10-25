@@ -150,6 +150,21 @@ def test_another_owner_fails(repo: Path) -> None:
     assert any("needs a job `ci`" in p for p in problems(repo))
 
 
+def test_secrets_inherit_fails(repo: Path) -> None:
+    ci = repo / ".github/workflows/ci.yml"
+    text = ci.read_text(encoding="utf-8")
+    explicit = "    secrets:\n      CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}\n"
+    ci.write_text(text.replace(explicit, "    secrets: inherit  # every secret\n"), encoding="utf-8")
+    assert [p for p in problems(repo) if "secrets: inherit" in p] == [
+        ".github/workflows/ci.yml:9: `secrets: inherit` passes every repository secret; "
+        "pass only the ones the reusable workflow declares, e.g. "
+        "`CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}`"
+    ]
+    # A comment that mentions it is fine.
+    ci.write_text(text.replace("jobs:\n", "# secrets: inherit\njobs:\n"), encoding="utf-8")
+    assert problems(repo) == []
+
+
 def test_stray_workflow_fails_unless_listed(repo: Path) -> None:
     (repo / ".github/workflows/tests.yml").write_text("name: tests\n", encoding="utf-8")
     assert any(p.startswith(".github/workflows/tests.yml") for p in problems(repo))

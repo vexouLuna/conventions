@@ -2,7 +2,7 @@
 #
 #   jobs:
 #     ci:
-#       uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v2.2.0
+#       uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v3.0.0
 #       with:
 #         postgres: true
 #
@@ -36,8 +36,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Install
         # --locked fails if uv.lock is missing or stale for pyproject.toml.
         run: uv sync --locked --all-extras
@@ -51,7 +51,7 @@ jobs:
     services:
       postgres:
         # An empty image means no service: the only way to make a service optional.
-        image: ${{ inputs.postgres && 'postgres:17-alpine' || '' }}
+        image: ${{ inputs.postgres && 'postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb' || '' }}
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -64,8 +64,8 @@ jobs:
     env:
       TEST_DATABASE_URL: ${{ inputs.postgres && 'postgresql://postgres:postgres@127.0.0.1:55432/postgres' || '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Install
         run: uv sync --locked --all-extras
       - name: Setup

@@ -203,6 +203,8 @@ def _expected_calls(cfg: Config) -> list[tuple[str, str, str]]:
 # case-insensitively, and the old name still redirects, so a workflow that names it keeps passing.
 OWNERS = ("vEXOULZ", "vexouLuna")
 REMOTE_USES = re.compile(rf"^(?i:{'|'.join(OWNERS)})/conventions/\.github/workflows/([\w.-]+)@(.+)$")
+# `secrets: inherit` hands every repository secret to the called workflow; name the ones it declares instead.
+SECRETS_INHERIT = re.compile(r"^\s*secrets:\s*['\"]?inherit['\"]?\s*(#.*)?$")
 
 
 def check_workflows(root: Path, cfg: Config) -> list[str]:
@@ -223,7 +225,17 @@ def check_workflows(root: Path, cfg: Config) -> list[str]:
                 "add it to extra_workflows in .conventions.toml if it really is neither"
             )
 
-    jobs_by_file = {name: workflow_jobs((wdir / name).read_text(encoding="utf-8")) for name in present}
+    texts = {name: (wdir / name).read_text(encoding="utf-8") for name in present}
+    for name, text in texts.items():
+        for n, line in enumerate(normalise(text).splitlines(), 1):
+            if SECRETS_INHERIT.match(line):
+                problems.append(
+                    f"{WORKFLOWS}/{name}:{n}: `secrets: inherit` passes every repository secret; "
+                    "pass only the ones the reusable workflow declares, e.g. "
+                    "`CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}`"
+                )
+
+    jobs_by_file = {name: workflow_jobs(text) for name, text in texts.items()}
     for name, jobs in jobs_by_file.items():
         for job, uses in jobs.items():
             m = REMOTE_USES.match(uses or "")
