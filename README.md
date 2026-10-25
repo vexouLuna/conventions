@@ -32,6 +32,8 @@ This writes `.conventions.toml` and then syncs. Then:
 3. After the pull request merges, run `conventions repo-settings --apply`. The required checks are named
    after the jobs, so protection has to follow the new names.
 4. In `renovate.json`, extend the shared preset: `{"extends": ["github>vexouLuna/conventions//renovate/default"]}`.
+   It pins the actions in your workflows to commit SHAs and their service images to digests, and keeps
+   them current. The reusable workflows here are pinned the same way.
 
 ## `.conventions.toml`
 
@@ -74,6 +76,9 @@ A `flow = "dev"` repo also has `release.yml`, with job `prepare` → `release-pr
 - The hooks are executable in git.
 - Workflows are only `ci.yml` and `publish.yml` (plus `release.yml` in a `flow = "dev"` repo, and
   `extra_workflows`), with the profile's jobs, each pinned to the same version as `.conventions.toml`.
+- No workflow passes `secrets: inherit`. A job that calls a reusable workflow passes only the secrets it
+  declares, e.g. `CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}` to
+  `conventions-check.yml` and `RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}` to the release workflows.
 - Compose files are only `compose.yaml` and `compose.dev.yaml`, at the root. One `Dockerfile`, at the
   root. Nothing in `.githooks/` except `.githooks/local/`.
 - Every changeset in `.changeset/` (when there is one) opens with a `---` header of
