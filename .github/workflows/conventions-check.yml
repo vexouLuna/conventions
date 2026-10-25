@@ -3,7 +3,8 @@
 #   jobs:
 #     conventions:
 #       uses: vexouLuna/conventions/.github/workflows/conventions-check.yml@v2.2.0
-#       secrets: inherit
+#       secrets:
+#         CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}
 #
 # Its jobs become the required checks `conventions / branch-name`, `conventions / check` and
 # `conventions / version`. The tag after @ must be the version in .conventions.toml; `check` fails
@@ -29,7 +30,7 @@ jobs:
   branch-name:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Conventional Branch, and allowed into its base
         # Through the environment, never interpolated into the script: a branch name is user input.
         # Outside a pull request there is no head branch to judge, so this passes, and the check exists
@@ -43,8 +44,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Synced files, workflows, layout
         env:
           FROM: ${{ inputs.from }}
@@ -62,11 +63,11 @@ jobs:
   version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # The base branch and the tags, for comparing a release with main.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Version files agree; a release into main raises the version
         # Every run checks that the files carrying the version agree. A pull request into main also has to
         # raise it above main's and use a tag that doesn't exist yet, in a flow = "dev" repo, where such a
