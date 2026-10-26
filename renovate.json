@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>vexouLuna/conventions//renovate/default"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "python-ci's Postgres service image, which sits inside an expression the github-actions manager can't read",
+      "managerFilePatterns": ["/^\\.github/workflows/python-ci\\.yml$/"],
+      "matchStrings": ["'(?<depName>postgres):(?<currentValue>[\\w.-]+)@(?<currentDigest>sha256:[a-f0-9]{64})'"],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}
