@@ -1,6 +1,6 @@
 [project]
 name = "vex-conventions"
-version = "3.0.0"
+version = "3.1.0"
 description = "Shared conventions for the vexouLuna repos: synced files, their check, and the repo settings."
 readme = "README.md"
 requires-python = ">=3.13"

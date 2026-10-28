@@ -5,7 +5,7 @@
 #       branches: [main]
 #   jobs:
 #     publish:
-#       uses: vexouLuna/conventions/.github/workflows/publish-site.yml@v3.0.0
+#       uses: vexouLuna/conventions/.github/workflows/publish-site.yml@v3.1.0
 #       permissions:
 #         contents: write
 #
