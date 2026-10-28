@@ -13,7 +13,7 @@ repos and checked:
 | `CONTRIBUTING.md`, PR template and `.gitignore` sections | a managed block inside the repo's own file | `conventions / check` |
 | CI: lint, types, tests, image and site publishing | reusable workflows, pinned to a tag | `conventions / check` (the pin) |
 | The repo's own version, and releases | `conventions version`, `release.yml` in a `flow = "dev"` repo | `conventions / version` |
-| Merge methods, branch protection, required checks | `conventions repo-settings --apply` | `conventions repo-settings --check` |
+| Merge methods, branch protection, required checks, the `v*` tag ruleset | `conventions repo-settings --apply` | `conventions repo-settings --check` |
 | New versions | the Renovate preset opens a PR | — |
 
 ## Adopting it
@@ -138,7 +138,13 @@ A `hotfix/*` into `main` sets its version with `conventions version set` and is 
 don't start other workflows, so neither the release pull request's CI nor the tag's image would run.
 Both workflows therefore use a repository secret `RELEASE_TOKEN`: a fine-grained personal access token
 (or a GitHub App token) for the repo with **Contents: read and write** and **Pull requests: read and
-write**. They fail at once, saying so, when it is missing.
+write**. They fail at once, saying so, when it is missing. Only the steps that push or call `gh` see
+it: the checkout keeps no credentials, and the conventions CLI runs in steps without a token.
+
+**Release tags can't move.** `conventions repo-settings --apply` puts a ruleset on `v*` tags in every
+repo: anyone who may push can create one (that is how `finish` releases), nobody can update or delete one,
+admins included. Every repo's `uses:` pins and `.conventions.toml` resolve those tags, so a moved tag
+would change CI everywhere.
 
 ## Releasing this repo
 

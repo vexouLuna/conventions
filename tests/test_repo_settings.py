@@ -54,13 +54,21 @@ def run(repo: Path, mode: str) -> int:
 
 
 PROTECTION = f"repos/{REPO}/branches/main/protection"
+RULESETS = f"repos/{REPO}/rulesets"
+RULESET = {**repo_settings.TAG_RULESET, "id": 7, "source": REPO}
+GOOD_RULESET = {("GET", RULESETS): [RULESET], ("GET", f"{RULESETS}/7"): RULESET}
+# On GitHub Free a private repo has no rulesets either; listing them answers the same 403.
+FREE_RULESET = {("GET", RULESETS): repo_settings.GhError(FREE_403)}
 
 
 def test_check_passes_when_settings_match(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cfg = config.load(repo)
-    install(monkeypatch, {("GET", f"repos/{REPO}"): repo_info(False), ("GET", PROTECTION): good_protection(cfg)})
+    install(
+        monkeypatch,
+        {("GET", f"repos/{REPO}"): repo_info(False), ("GET", PROTECTION): good_protection(cfg), **GOOD_RULESET},
+    )
     assert run(repo, "--check") == 0
     assert capsys.readouterr().out == f"ok: {REPO} settings match (main protected)\n"
 
@@ -70,11 +78,17 @@ def test_check_private_free_repo_warns_and_passes(
 ) -> None:
     install(
         monkeypatch,
-        {("GET", f"repos/{REPO}"): repo_info(True), ("GET", PROTECTION): repo_settings.GhError(FREE_403)},
+        {
+            ("GET", f"repos/{REPO}"): repo_info(True),
+            ("GET", PROTECTION): repo_settings.GhError(FREE_403),
+            **FREE_RULESET,
+        },
     )
     assert run(repo, "--check") == 0
     assert capsys.readouterr().out == (
-        f"warning: {REPO}: main can't be protected: private repo on GitHub Free\nok: {REPO} settings match\n"
+        f"warning: {REPO}: main can't be protected: private repo on GitHub Free\n"
+        f"warning: {REPO}: v* tags can't be protected: private repo on GitHub Free\n"
+        f"ok: {REPO} settings match\n"
     )
 
 
@@ -86,11 +100,13 @@ def test_check_private_free_repo_still_checks_merge_settings(
         {
             ("GET", f"repos/{REPO}"): {**repo_info(True), "allow_squash_merge": True},
             ("GET", PROTECTION): repo_settings.GhError(FREE_403),
+            **FREE_RULESET,
         },
     )
     assert run(repo, "--check") == 1
     assert capsys.readouterr().out == (
         f"warning: {REPO}: main can't be protected: private repo on GitHub Free\n"
+        f"warning: {REPO}: v* tags can't be protected: private repo on GitHub Free\n"
         f"error: {REPO}: allow_squash_merge is True, should be False\n"
     )
 
@@ -122,13 +138,28 @@ def test_check_other_errors_still_fail(
 
 def test_apply_protects_main(repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     cfg = config.load(repo)
-    fake = install(monkeypatch, {("PATCH", f"repos/{REPO}"): repo_info(False), ("PUT", PROTECTION): {}})
+    fake = install(
+        monkeypatch,
+        {
+            ("PATCH", f"repos/{REPO}"): repo_info(False),
+            ("PUT", PROTECTION): {},
+            ("GET", RULESETS): [],
+            ("POST", RULESETS): RULESET,
+        },
+    )
     assert run(repo, "--apply") == 0
-    assert [(m, p) for m, p, _ in fake.calls] == [("PATCH", f"repos/{REPO}"), ("PUT", PROTECTION)]
+    assert [(m, p) for m, p, _ in fake.calls] == [
+        ("PATCH", f"repos/{REPO}"),
+        ("PUT", PROTECTION),
+        ("GET", RULESETS),
+        ("POST", RULESETS),
+    ]
     assert fake.calls[1][2] == repo_settings.protection_payload(cfg)
+    assert fake.calls[3][2] == repo_settings.TAG_RULESET
     out = capsys.readouterr().out
     assert "warning" not in out
     assert f"ok: {REPO}: main protected" in out
+    assert f"ok: {REPO}: v* tags protected" in out
 
 
 def test_apply_private_free_repo_sets_merge_settings_and_warns(
@@ -136,13 +167,18 @@ def test_apply_private_free_repo_sets_merge_settings_and_warns(
 ) -> None:
     fake = install(
         monkeypatch,
-        {("PATCH", f"repos/{REPO}"): repo_info(True), ("PUT", PROTECTION): repo_settings.GhError(FREE_403)},
+        {
+            ("PATCH", f"repos/{REPO}"): repo_info(True),
+            ("PUT", PROTECTION): repo_settings.GhError(FREE_403),
+            **FREE_RULESET,
+        },
     )
     assert run(repo, "--apply") == 0
     assert fake.calls[0] == ("PATCH", f"repos/{REPO}", {**repo_settings.REPO_FIELDS, "default_branch": "main"})
     assert capsys.readouterr().out == (
         f"ok: {REPO}: merge commits only, branches deleted on merge, default branch main\n"
         f"warning: {REPO}: main can't be protected: private repo on GitHub Free\n"
+        f"warning: {REPO}: v* tags can't be protected: private repo on GitHub Free\n"
     )
 
 
@@ -155,3 +191,50 @@ def test_apply_public_repo_403_still_fails(
     )
     assert run(repo, "--apply") == 1
     assert repo_settings.UPGRADE_NEEDED in capsys.readouterr().err
+
+
+def test_check_fails_without_tag_ruleset(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = config.load(repo)
+    install(
+        monkeypatch,
+        {("GET", f"repos/{REPO}"): repo_info(False), ("GET", PROTECTION): good_protection(cfg), ("GET", RULESETS): []},
+    )
+    assert run(repo, "--check") == 1
+    assert capsys.readouterr().out == f"error: {REPO}: no ruleset protects v* tags\n"
+
+
+def test_check_fails_when_tag_ruleset_lets_tags_move(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cfg = config.load(repo)
+    weak = {**RULESET, "enforcement": "evaluate", "rules": [{"type": "deletion"}]}
+    install(
+        monkeypatch,
+        {
+            ("GET", f"repos/{REPO}"): repo_info(False),
+            ("GET", PROTECTION): good_protection(cfg),
+            ("GET", RULESETS): [{**weak, "rules": None}, {**weak, "id": 8, "source": "the-org"}],
+            ("GET", f"{RULESETS}/7"): weak,
+        },
+    )
+    assert run(repo, "--check") == 1
+    assert capsys.readouterr().out == (
+        f"error: {REPO}: v* tags: ruleset enforcement is 'evaluate', should be 'active'\n"
+        f"error: {REPO}: v* tags: ruleset rules are ['deletion'], should be ['deletion', 'update']\n"
+    )
+
+
+def test_apply_updates_an_existing_tag_ruleset(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = install(
+        monkeypatch,
+        {
+            ("PATCH", f"repos/{REPO}"): repo_info(False),
+            ("PUT", PROTECTION): {},
+            **GOOD_RULESET,
+            ("PUT", f"{RULESETS}/7"): RULESET,
+        },
+    )
+    assert run(repo, "--apply") == 0
+    assert fake.calls[-1] == ("PUT", f"{RULESETS}/7", repo_settings.TAG_RULESET)
