@@ -21,7 +21,7 @@ repos and checked:
 From the repo's root, on a Conventional Branch (`chore/adopt-conventions`):
 
 ```sh
-uvx --from git+https://github.com/vexouLuna/conventions@v3.0.0 conventions init --profile python-service
+uvx --from git+https://github.com/vexouLuna/conventions@v3.1.0 conventions init --profile python-service
 ```
 
 This writes `.conventions.toml` and then syncs. Then:
