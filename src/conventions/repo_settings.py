@@ -5,9 +5,12 @@
   required checks green on an up-to-date branch, admins included, conversations resolved, no force
   pushes or deletion.
 - In a `flow = "dev"` repo, `dev` is the default branch, so pull requests target it by default.
+- A ruleset on `v*` tags: anyone who may push can create a release tag (the release workflow does), but
+  nobody can move or delete one, admins included. Every repo's CI and pins resolve those tags.
 
-A private repo on GitHub Free can't have branch protection. There the merge settings still apply and
-are still checked, and each protected branch gets a warning instead of a failure.
+A private repo on GitHub Free can't have branch protection or rulesets. There the merge settings still
+apply and are still checked, and each protected branch and the tag ruleset get a warning instead of a
+failure.
 
 This is the only way these settings change; the GitHub UI is for looking. It talks to GitHub through
 the `gh` CLI, so it acts as whoever `gh auth status` says.
@@ -27,6 +30,17 @@ REPO_FIELDS = {
     "allow_rebase_merge": False,
     "delete_branch_on_merge": True,
 }
+
+
+TAG_RULESET: dict[str, Any] = {
+    "name": "release tags",
+    "target": "tag",
+    "enforcement": "active",
+    "bypass_actors": [],
+    "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
+    "rules": [{"type": "update"}, {"type": "deletion"}],
+}
+TAGS = "v* tags"
 
 
 # What GitHub answers (HTTP 403) when a plan doesn't allow branch protection on a private repo.
@@ -131,6 +145,35 @@ def get_protection(repo: str, branch: str) -> dict[str, Any] | None:
         raise
 
 
+def get_tag_ruleset(repo: str) -> dict[str, Any] | None:
+    """The repo's own ruleset named like TAG_RULESET, with its rules, or None."""
+    for summary in gh(f"repos/{repo}/rulesets"):
+        if summary.get("name") == TAG_RULESET["name"] and summary.get("source") == repo:
+            result: dict[str, Any] = gh(f"repos/{repo}/rulesets/{summary['id']}")
+            return result
+    return None
+
+
+def diff_tag_ruleset(actual: dict[str, Any] | None) -> list[str]:
+    if actual is None:
+        return [f"no ruleset protects {TAGS}"]
+    problems = []
+    for key in ("target", "enforcement"):
+        if actual.get(key) != TAG_RULESET[key]:
+            problems.append(f"{TAGS}: ruleset {key} is {actual.get(key)!r}, should be {TAG_RULESET[key]!r}")
+    if actual.get("bypass_actors"):
+        problems.append(f"{TAGS}: the ruleset can be bypassed")
+    want_refs = TAG_RULESET["conditions"]["ref_name"]["include"]
+    have_refs = (actual.get("conditions") or {}).get("ref_name", {}).get("include")
+    if have_refs != want_refs:
+        problems.append(f"{TAGS}: ruleset applies to {have_refs!r}, should be {want_refs!r}")
+    have = sorted(rule.get("type", "") for rule in actual.get("rules") or [])
+    want = sorted(rule["type"] for rule in TAG_RULESET["rules"])
+    if have != want:
+        problems.append(f"{TAGS}: ruleset rules are {have}, should be {want}")
+    return problems
+
+
 def unprotectable(e: GhError, repo_info: dict[str, Any]) -> bool:
     return UPGRADE_NEEDED in str(e) and bool(repo_info.get("private"))
 
@@ -153,6 +196,12 @@ def check(repo: str, cfg: Config) -> tuple[list[str], list[str]]:
             warnings.append(free_warning(branch))
             continue
         problems += diff_protection(branch, protection, cfg)
+    try:
+        problems += diff_tag_ruleset(get_tag_ruleset(repo))
+    except GhError as e:
+        if not unprotectable(e, repo_info):
+            raise
+        warnings.append(free_warning(TAGS))
     return problems, warnings
 
 
@@ -171,4 +220,16 @@ def apply(repo: str, cfg: Config) -> tuple[list[str], list[str]]:
             warnings.append(free_warning(branch))
             continue
         done.append(f"{repo}: {branch} protected; required checks {', '.join(cfg.required_checks)}")
+    try:
+        existing = get_tag_ruleset(repo)
+        if existing is None:
+            gh("-X", "POST", f"repos/{repo}/rulesets", payload=TAG_RULESET)
+        else:
+            gh("-X", "PUT", f"repos/{repo}/rulesets/{existing['id']}", payload=TAG_RULESET)
+    except GhError as e:
+        if not unprotectable(e, repo_info or {}):
+            raise
+        warnings.append(free_warning(TAGS))
+        return done, warnings
+    done.append(f"{repo}: {TAGS} protected; no update, no deletion")
     return done, warnings
