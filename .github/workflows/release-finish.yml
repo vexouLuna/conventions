@@ -57,11 +57,14 @@ jobs:
   finish:
     if: github.event.pull_request.merged
     runs-on: ubuntu-latest
+    # RELEASE_TOKEN reaches only the steps that call gh. The checkout keeps no credentials and the
+    # conventions CLI (fetched by tag) runs in a step that has no token at all.
     env:
-      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
       SHA: ${{ github.event.pull_request.merge_commit_sha }}
     steps:
       - name: RELEASE_TOKEN is set
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::error::the repo needs the secret RELEASE_TOKEN; see https://github.com/vexouLuna/conventions#releasing-a-flow--dev-repo"
@@ -71,7 +74,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: Version
         id: version
@@ -94,12 +97,14 @@ jobs:
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
       - name: Tag and GitHub release
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           gh release create "$TAG" --target "$SHA" --title "$TAG" --generate-notes
           echo "Released $TAG at $SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Bring main back into dev
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if git merge-base --is-ancestor "$SHA" origin/dev; then

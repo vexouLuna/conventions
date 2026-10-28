@@ -48,10 +48,12 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    # RELEASE_TOKEN reaches only the steps that push or call gh. The checkout keeps no credentials and
+    # the conventions CLI (fetched by tag) runs in steps that have no token at all.
     steps:
       - name: RELEASE_TOKEN is set
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::error::the repo needs the secret RELEASE_TOKEN; see https://github.com/vexouLuna/conventions#releasing-a-flow--dev-repo"
@@ -61,9 +63,11 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - name: No release already open
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           open=$(gh pr list --base main --state open --json number,headRefName \
             --jq '.[] | select(.headRefName == "dev" or (.headRefName | startswith("release/"))) | "#\(.number) \(.headRefName)"')
@@ -98,9 +102,14 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -qam "chore: release $NEXT"
           fi
-          git push -q origin "$BRANCH"
+      - name: Push release branch
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          BRANCH: ${{ steps.next.outputs.branch }}
+        run: git -c credential.helper='!gh auth git-credential' push -q origin "$BRANCH"
       - name: Release pull request
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           NEXT: ${{ steps.next.outputs.version }}
           BRANCH: ${{ steps.next.outputs.branch }}
         run: |
