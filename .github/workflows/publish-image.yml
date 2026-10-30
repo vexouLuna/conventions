@@ -8,7 +8,7 @@
 #   jobs:
 #     image:
 #       needs: ci
-#       uses: vexouLuna/conventions/.github/workflows/publish-image.yml@v3.1.0
+#       uses: vexouLuna/conventions/.github/workflows/publish-image.yml@v3.2.0
 #       permissions:
 #         contents: read
 #         packages: write
