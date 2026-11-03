@@ -61,6 +61,14 @@ GOOD_RULESET = {("GET", RULESETS): [RULESET], ("GET", f"{RULESETS}/7"): RULESET}
 FREE_RULESET = {("GET", RULESETS): repo_settings.GhError(FREE_403)}
 
 
+def test_tag_ruleset_source_matches_regardless_of_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    install(
+        monkeypatch,
+        {("GET", "repos/Owner/Sample/rulesets"): [RULESET], ("GET", "repos/Owner/Sample/rulesets/7"): RULESET},
+    )
+    assert repo_settings.get_tag_ruleset("Owner/Sample") == RULESET
+
+
 def test_check_passes_when_settings_match(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
