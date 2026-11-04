@@ -148,7 +148,7 @@ def get_protection(repo: str, branch: str) -> dict[str, Any] | None:
 def get_tag_ruleset(repo: str) -> dict[str, Any] | None:
     """The repo's own ruleset named like TAG_RULESET, with its rules, or None."""
     for summary in gh(f"repos/{repo}/rulesets"):
-        if summary.get("name") == TAG_RULESET["name"] and summary.get("source") == repo:
+        if summary.get("name") == TAG_RULESET["name"] and str(summary.get("source")).lower() == repo.lower():
             result: dict[str, Any] = gh(f"repos/{repo}/rulesets/{summary['id']}")
             return result
     return None
