@@ -1,5 +1,10 @@
 # conventions
 
+<!-- conventions:begin: synced from vexouLuna/conventions; edit it there, then run `conventions sync` -->
+[![CI](https://github.com/vexouLuna/conventions/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vexouLuna/conventions/actions/workflows/ci.yml?query=branch%3Amain)
+[![version](https://img.shields.io/github/v/tag/vexouLuna/conventions?sort=semver&label=version)](https://github.com/vexouLuna/conventions/tags)
+<!-- conventions:end -->
+
 The shared conventions for the vexouLuna repos, and the tooling that keeps every repo on them. Each job
 has one name and one way of being done. A conventions change reaches every repo as a pull request, and
 CI fails when a repo drifts.
@@ -10,7 +15,7 @@ repos and checked:
 | What | How it reaches a repo | What catches drift |
 |---|---|---|
 | Shared Claude rules, hooks, `.gitattributes`, ruff config, `.nvmrc` | copied whole by `conventions sync` | `conventions / check` |
-| `CONTRIBUTING.md`, PR template and `.gitignore` sections | a managed block inside the repo's own file | `conventions / check` |
+| `CONTRIBUTING.md`, PR template and `.gitignore` sections, README badges | a managed block inside the repo's own file | `conventions / check` |
 | CI: lint, types, tests, image and site publishing | reusable workflows, pinned to a tag | `conventions / check` (the pin) |
 | The repo's own version, and releases | `conventions version`, `release.yml` in a `flow = "dev"` repo | `conventions / version` |
 | Merge methods, branch protection, required checks, the `v*` tag ruleset | `conventions repo-settings --apply` | `conventions repo-settings --check` |
@@ -43,7 +48,25 @@ profile = "python-service"  # see Profiles
 flow = "trunk"              # "trunk": work merges into main. "dev": work integrates on dev, main is production
 extra_checks = []           # required checks beyond the profile's, e.g. a repo-specific CI job
 extra_workflows = []        # workflow files beyond ci.yml and publish.yml
+status = { page = "https://status.example.com", endpoints = ["websites_site"] }  # optional, see below
+json_badges = [{ label = "channels", url = "https://api.example.com/readyz", query = "$.channels" }]  # optional
 ```
+
+### README badges
+
+`conventions sync` puts a row of badges below the README's `# ` title (or at the top, with no title):
+
+- **CI**: `ci.yml` on the default branch (`dev` in a `flow = "dev"` repo, else `main`).
+- **Publish**: `publish.yml` on `main`, for `site`.
+- **Version**: the newest semver tag, for `python-lib`, `node-lib` and `python-service`.
+- **Conventions**: the pinned version.
+- **Health and 7-day uptime** for each Gatus endpoint key in `status.endpoints`, from the Gatus at
+  `status.page`. The keys are `<group>_<name>`, as Gatus's `/api/v1/endpoints/statuses` lists them.
+- **One value from a public JSON endpoint** for each `json_badges` entry: `query` is a JSONPath into
+  what `url` returns, such as a count or the deployed version. shields.io fetches it, so the endpoint
+  must be public and must not return anything private.
+
+The repo's `owner/name` comes from the `origin` remote.
 
 ## Profiles
 
