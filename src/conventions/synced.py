@@ -4,8 +4,8 @@ Two kinds of synced content:
 
 - Whole files (everything under files/common/ and files/<language>/), copied byte for byte. Nothing else
   may live in `.conventions/`.
-- Managed blocks inside files the repo otherwise owns (CONTRIBUTING.md, the PR template, .gitignore):
-  only the text between the `conventions:begin` and `conventions:end` markers is synced.
+- Managed blocks inside files the repo otherwise owns (README.md's badges, CONTRIBUTING.md, the PR
+  template, .gitignore): only the text between the `conventions:begin` and `conventions:end` markers is synced.
 
 The repo's own CLAUDE.md imports `.conventions/CLAUDE.md` on its first line.
 """
@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
+from urllib.parse import quote, urlencode, urlsplit
 
-from conventions.config import Config
+from conventions.config import OWNER, Config
 
 FILES = files("conventions") / "files"
 CONVENTIONS_DIR = ".conventions"
@@ -44,6 +46,38 @@ class Block:
     parts: tuple[str, ...]  # under files/blocks/; {flow} and {language} are filled in, missing parts skipped
     placement: str  # "after-title": below a leading "# " heading; "top": first thing in the file
     create: str  # what a new file holds above the block
+    render: Callable[[Config], str] | None = None  # builds the body from the config instead of parts
+
+
+# Profiles that publish versions as tags.
+TAGGED_PROFILES = {"python-lib", "node-lib", "python-service"}
+
+
+def badges(cfg: Config) -> str:
+    gh = f"https://github.com/{cfg.repo}"
+    ci = f"{gh}/actions/workflows/ci.yml"
+    lines = [f"[![CI]({ci}/badge.svg?branch={cfg.default_branch})]({ci}?query=branch%3A{cfg.default_branch})"]
+    if cfg.profile == "site":
+        publish = f"{gh}/actions/workflows/publish.yml"
+        lines.append(f"[![publish]({publish}/badge.svg?branch=main)]({publish}?query=branch%3Amain)")
+    if cfg.profile in TAGGED_PROFILES:
+        lines.append(
+            f"[![version](https://img.shields.io/github/v/tag/{cfg.repo}?sort=semver&label=version)]({gh}/tags)"
+        )
+    if not cfg.self_repo:
+        pin = f"https://img.shields.io/badge/conventions-{cfg.version}-blue"
+        lines.append(
+            f"[![conventions {cfg.version}]({pin})](https://github.com/{OWNER}/conventions/tree/{cfg.version})"
+        )
+    for key in cfg.status_endpoints:
+        api = f"{cfg.status_page}/api/v1/endpoints/{key}"
+        lines.append(f"[![{key}]({api}/health/badge.svg)]({cfg.status_page})")
+        lines.append(f"[![{key} uptime 7d]({api}/uptimes/7d/badge.svg)]({cfg.status_page})")
+    for b in cfg.json_badges:
+        q = urlencode({"url": b["url"], "query": b["query"], "label": b["label"]}, quote_via=quote)
+        site = "{0.scheme}://{0.netloc}".format(urlsplit(b["url"]))
+        lines.append(f"[![{b['label']}](https://img.shields.io/badge/dynamic/json?{q})]({site})")
+    return "\n".join(lines)
 
 
 BLOCKS = (
@@ -56,6 +90,7 @@ BLOCKS = (
     ),
     Block(".github/pull_request_template.md", "md", ("pull_request_template.md",), "top", ""),
     Block(".gitignore", "hash", ("gitignore/common", "gitignore/{language}"), "top", ""),
+    Block("README.md", "md", (), "after-title", "", render=badges),
 )
 
 
@@ -84,6 +119,9 @@ def whole_files(cfg: Config) -> dict[str, str]:
 
 def block_text(cfg: Config, block: Block) -> str:
     """The managed block for this repo, markers included, ending in a newline."""
+    begin, end = MARKERS[block.style]
+    if block.render:
+        return f"{begin}\n{block.render(cfg)}\n{end}\n"
     body = []
     for part in block.parts:
         name = part.format(flow=cfg.flow, language=cfg.language or "")
@@ -91,7 +129,6 @@ def block_text(cfg: Config, block: Block) -> str:
         if name.endswith("/") or not node.is_file():
             continue
         body.append(normalise(node.read_text(encoding="utf-8")))
-    begin, end = MARKERS[block.style]
     return f"{begin}\n{''.join(body).strip(chr(10))}\n{end}\n"
 
 

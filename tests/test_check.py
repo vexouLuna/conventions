@@ -275,3 +275,109 @@ def test_private_patterns_from_env(repo: Path, monkeypatch: pytest.MonkeyPatch) 
     found = problems(repo, public=True)
     assert found == [f"notes.md:1: matches a private pattern ({check.PRIVATE_PATTERNS_ENV}) in a public repo"]
     assert "secret-box" not in found[0]
+
+
+# --- README badges -----------------------------------------------------------------------------------
+
+
+def test_readme_badges_for_a_python_lib(repo: Path) -> None:
+    git(repo, "remote", "add", "origin", "https://github.com/vexouLuna/sample.git")
+    cfg = config.load(repo)
+    assert cfg.repo == "vexouLuna/sample"
+    body = synced.badges(cfg)
+    assert "vexouLuna/sample/actions/workflows/ci.yml/badge.svg?branch=main" in body
+    assert "img.shields.io/github/v/tag/vexouLuna/sample" in body
+    assert "/api/v1/endpoints/" not in body
+
+
+def test_readme_badges_for_a_dev_flow_service_with_status(repo: Path) -> None:
+    git(repo, "remote", "add", "origin", "git@github.com:vexouLuna/bot.git")
+    toml = repo / config.CONFIG_NAME
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('"python-lib"', '"python-service"').replace('"trunk"', '"dev"')
+        + 'status = { page = "https://status.example.com/", endpoints = ["api_bot", "websites_bot"] }\n',
+        encoding="utf-8",
+    )
+    body = synced.badges(config.load(repo))
+    assert "vexouLuna/bot/actions/workflows/ci.yml/badge.svg?branch=dev" in body
+    assert "img.shields.io/github/v/tag/vexouLuna/bot" in body
+    for key in ("api_bot", "websites_bot"):
+        assert f"(https://status.example.com/api/v1/endpoints/{key}/health/badge.svg)" in body
+        assert f"(https://status.example.com/api/v1/endpoints/{key}/uptimes/7d/badge.svg)" in body
+
+
+def test_site_has_publish_badge_and_no_version_badge(repo: Path) -> None:
+    cfg = config.load(repo)
+    body = synced.badges(config.Config(version=cfg.version, profile="site", repo="vexouLuna/site"))
+    assert "vexouLuna/site/actions/workflows/publish.yml/badge.svg?branch=main" in body
+    assert "github/v/tag" not in body
+
+
+def test_conventions_pin_badge(repo: Path) -> None:
+    cfg = config.load(repo)
+    body = synced.badges(cfg)
+    assert f"(https://img.shields.io/badge/conventions-{V}-blue)" in body
+    assert f"(https://github.com/vexouLuna/conventions/tree/{V})" in body
+    cfg.self_repo = True
+    assert "badge/conventions-" not in synced.badges(cfg)
+
+
+def test_json_badge(repo: Path) -> None:
+    toml = repo / config.CONFIG_NAME
+    toml.write_text(
+        toml.read_text(encoding="utf-8")
+        + '[[json_badges]]\nlabel = "VODs"\nurl = "https://vods.example.com/backend/vods?$limit=0"\n'
+        'query = "$.total"\n',
+        encoding="utf-8",
+    )
+    body = synced.badges(config.load(repo))
+    assert (
+        "[![VODs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fvods.example.com%2Fbackend%2Fvods"
+        "%3F%24limit%3D0&query=%24.total&label=VODs)](https://vods.example.com)"
+    ) in body
+
+
+@pytest.mark.parametrize(
+    "badges",
+    [
+        '{ label = "x", url = "https://a.example.com", query = "$.x" }',
+        '[{ label = "x", url = "http://a.example.com", query = "$.x" }]',
+        '[{ label = "x", url = "https://a.example.com" }]',
+        '[{ label = "", url = "https://a.example.com", query = "$.x" }]',
+        '[{ label = "x", url = "https://a.example.com", query = "x" }]',
+    ],
+)
+def test_bad_json_badges_fail(repo: Path, badges: str) -> None:
+    toml = repo / config.CONFIG_NAME
+    toml.write_text(toml.read_text(encoding="utf-8") + f"json_badges = {badges}\n", encoding="utf-8")
+    with pytest.raises(config.ConfigError, match="json_badges must be"):
+        config.load(repo)
+
+
+def test_readme_badges_go_below_the_title(repo: Path) -> None:
+    readme = repo / "README.md"
+    readme.write_text("# sample\n\nWhat it does.\n", encoding="utf-8")
+    assert any(p.startswith("README.md has no conventions block") for p in problems(repo))
+    synced.sync(repo, config.load(repo))
+    text = readme.read_text(encoding="utf-8")
+    assert text.startswith("# sample\n\n<!-- conventions:begin")
+    assert text.endswith("<!-- conventions:end -->\n\nWhat it does.\n")
+    assert problems(repo) == []
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        '{ page = "https://status.example.com" }',
+        '{ endpoints = ["a"] }',
+        '{ page = "http://status.example.com", endpoints = ["a"] }',
+        '{ page = "https://status.example.com", endpoints = "a" }',
+        '{ page = "https://status.example.com", endpoints = ["a"], extra = 1 }',
+        '"https://status.example.com"',
+    ],
+)
+def test_bad_status_config_fails(repo: Path, status: str) -> None:
+    toml = repo / config.CONFIG_NAME
+    toml.write_text(toml.read_text(encoding="utf-8") + f"status = {status}\n", encoding="utf-8")
+    with pytest.raises(config.ConfigError, match="status must be"):
+        config.load(repo)

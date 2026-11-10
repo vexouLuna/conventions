@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,8 @@ PROFILE_CHECKS: dict[str, list[str]] = {
 }
 
 VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+OWNER = "vexouLuna"
+_GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 
 
 class ConfigError(Exception):
@@ -47,6 +50,13 @@ class Config:
     extra_workflows: list[str] = field(default_factory=list)
     # True only in vexouLuna/conventions itself, which checks against its own checkout rather than a pin.
     self_repo: bool = False
+    # `status = { page = "...", endpoints = [...] }`: Gatus endpoint keys whose badges go in the README.
+    status_page: str = ""
+    status_endpoints: list[str] = field(default_factory=list)
+    # `json_badges = [{ label, url, query }]`: one value from a public JSON endpoint, e.g. a count.
+    json_badges: list[dict[str, str]] = field(default_factory=list)
+    # "owner/name" on GitHub, from the origin remote; not read from the file.
+    repo: str = f"{OWNER}/repo"
 
     @property
     def language(self) -> str | None:
@@ -60,6 +70,19 @@ class Config:
     def protected_branches(self) -> list[str]:
         return ["main", "dev"] if self.flow == "dev" else ["main"]
 
+    @property
+    def default_branch(self) -> str:
+        return "dev" if self.flow == "dev" else "main"
+
+
+def github_repo(root: Path) -> str:
+    """ "owner/name" from the origin remote, else this owner and the folder's name."""
+    url = subprocess.run(
+        ["git", "-C", str(root), "remote", "get-url", "origin"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    m = _GITHUB_REMOTE_RE.search(url)
+    return m.group(1) if m else f"{OWNER}/{root.resolve().name}"
+
 
 def load(root: Path) -> Config:
     path = root / CONFIG_NAME
@@ -70,7 +93,7 @@ def load(root: Path) -> Config:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{CONFIG_NAME}: {e}") from e
 
-    known = {"version", "profile", "flow", "extra_checks", "extra_workflows", "self"}
+    known = {"version", "profile", "flow", "extra_checks", "extra_workflows", "self", "status", "json_badges"}
     unknown = sorted(set(data) - known)
     if unknown:
         raise ConfigError(f"{CONFIG_NAME}: unknown keys {', '.join(unknown)}")
@@ -95,6 +118,32 @@ def load(root: Path) -> Config:
     if not isinstance(self_repo, bool):
         raise ConfigError(f"{CONFIG_NAME}: self must be true or false")
 
+    status = data.get("status", {})
+    page = status.get("page", "") if isinstance(status, dict) else None
+    endpoints = status.get("endpoints", []) if isinstance(status, dict) else None
+    if (
+        not isinstance(page, str)
+        or not isinstance(endpoints, list)
+        or not all(isinstance(e, str) for e in endpoints)
+        or set(status) - {"page", "endpoints"}
+        or bool(page) != bool(endpoints)
+        or (page and not page.startswith("https://"))
+    ):
+        raise ConfigError(f'{CONFIG_NAME}: status must be {{ page = "https://...", endpoints = ["<gatus key>", ...] }}')
+
+    json_badges = data.get("json_badges", [])
+    if not isinstance(json_badges, list) or not all(
+        isinstance(b, dict)
+        and set(b) == {"label", "url", "query"}
+        and all(isinstance(v, str) and v for v in b.values())
+        and b["url"].startswith("https://")
+        and b["query"].startswith("$")
+        for b in json_badges
+    ):
+        raise ConfigError(
+            f'{CONFIG_NAME}: json_badges must be [{{ label = "...", url = "https://...", query = "$.path" }}, ...]'
+        )
+
     return Config(
         version=version,
         profile=profile,
@@ -102,6 +151,10 @@ def load(root: Path) -> Config:
         extra_checks=str_list("extra_checks"),
         extra_workflows=str_list("extra_workflows"),
         self_repo=self_repo,
+        status_page=page.rstrip("/"),
+        status_endpoints=endpoints,
+        json_badges=json_badges,
+        repo=github_repo(root),
     )
 
 
@@ -114,4 +167,5 @@ def render(version: str, profile: str, flow: str) -> str:
         f'flow = "{flow}"\n'
         "# extra_checks = []      # required checks beyond the profile's, e.g. a repo-specific job\n"
         "# extra_workflows = []   # workflow files beyond ci.yml and publish.yml\n"
+        '# status = { page = "https://status.example.com", endpoints = ["group_name"] }  # Gatus badges\n'
     )
