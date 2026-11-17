@@ -3,6 +3,7 @@
 #
 #   jobs:
 #     review:
+#       needs: [conventions, ci]   # every other job in ci.yml: no review of a change that fails CI
 #       permissions:
 #         contents: read
 #         pull-requests: read
@@ -17,7 +18,8 @@
 # sign-in uses, and a called workflow can't have more permissions than its caller, hence the block.
 #
 # Sonnet triages the diff first: a simple change is reviewed by Sonnet, a complex or unclear one by Opus.
-# The job's summary says which, and why.
+# The job's summary has a table of the triage, the reason, the model, the result and the cost, and the
+# log has the same as one JSON line starting `claude-review-stats`, for statistics.
 #
 # `review / review` is not a required check: a review is advice, and a run can fail on a usage limit.
 name: claude-review
@@ -93,15 +95,21 @@ jobs:
         # Through the environment, never interpolated into the script: the verdict is model output.
         env:
           VERDICT: ${{ steps.triage.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.triage.outputs.execution_file }}
         # Sonnet only on a clear "not complex": no verdict, or an unsure one, means Opus.
+        # The triage cost is read here because the review step writes its own execution file over it.
         run: |
           rm -f .claude-review.diff
-          if [ "$(jq -r '.complex' <<<"$VERDICT" 2>/dev/null)" = "false" ]; then model=sonnet; else model=opus; fi
-          echo "model=$model" >> "$GITHUB_OUTPUT"
-          reason=$(jq -r '.reason // empty' <<<"$VERDICT" 2>/dev/null || true)
-          echo "Review model: $model. ${reason:-No triage verdict.}" | tee -a "$GITHUB_STEP_SUMMARY"
+          case "$(jq -r '.complex' <<<"$VERDICT" 2>/dev/null || true)" in
+            false) triage=simple model=sonnet ;;
+            true) triage=complex model=opus ;;
+            *) triage="no verdict" model=opus ;;
+          esac
+          cost=$(jq -r '.. | .total_cost_usd? // empty' "$EXECUTION_FILE" 2>/dev/null | tail -1 || true)
+          { echo "triage=$triage"; echo "model=$model"; echo "cost=${cost:-0}"; } >> "$GITHUB_OUTPUT"
 
       - name: Review
+        id: review
         uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -110,3 +118,41 @@ jobs:
           prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
           # The inline-comment tool only exists when it is allowed here.
           claude_args: --model ${{ steps.model.outputs.model }} --allowedTools "mcp__github_inline_comment__create_inline_comment"
+
+      # What happened, twice: a table in the job summary for people, and one `claude-review-stats` JSON
+      # line in the log for statistics (`gh run view --log | grep claude-review-stats`).
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          VERDICT: ${{ steps.triage.outputs.structured_output }}
+          TRIAGE: ${{ steps.model.outputs.triage }}
+          MODEL: ${{ steps.model.outputs.model }}
+          TRIAGE_COST: ${{ steps.model.outputs.cost }}
+          CONCLUSION: ${{ steps.review.outputs.conclusion }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        # Never fails the job: a report that can't be written is not a failed review.
+        run: |
+          set +e
+          reason=$(jq -r '.reason // empty' <<<"$VERDICT" 2>/dev/null)
+          review_cost=$(jq -r '.. | .total_cost_usd? // empty' "$EXECUTION_FILE" 2>/dev/null | tail -1)
+          # Inline comments Claude left on this commit; a re-run of the same commit counts the earlier ones too.
+          comments=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/comments?per_page=100" \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .original_commit_id == \"$SHA\")] | length" 2>/dev/null)
+          stats=$(jq -n -c \
+            --arg pr "$PR" --arg triage "${TRIAGE:-no verdict}" --arg reason "$reason" --arg model "$MODEL" \
+            --arg conclusion "${CONCLUSION:-skipped}" --arg comments "$comments" \
+            --arg triage_cost "$TRIAGE_COST" --arg review_cost "$review_cost" \
+            '{pr: ($pr | tonumber? // null), triage: $triage, reason: $reason, model: $model,
+              conclusion: $conclusion, inline_comments: ($comments | tonumber? // 0),
+              triage_cost_usd: ($triage_cost | tonumber? // 0), review_cost_usd: ($review_cost | tonumber? // 0)}
+             | .total_cost_usd = (.triage_cost_usd + .review_cost_usd)')
+          echo "claude-review-stats $stats"
+          # A `|` in the reason would end its table cell.
+          jq -r '"| Triage | Why | Model | Result | Cost (API price) |",
+                 "|---|---|---|---|---|",
+                 "| \(.triage) | \(.reason | split("|") | join("/") | if . == "" then "—" else . end) | \(.model) | \(.conclusion), \(.inline_comments) inline comments | $\(.total_cost_usd * 100 | round / 100) (triage $\(.triage_cost_usd * 100 | round / 100), review $\(.review_cost_usd * 100 | round / 100)) |"' \
+            <<<"$stats" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
