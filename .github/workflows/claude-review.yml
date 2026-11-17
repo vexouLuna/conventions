@@ -16,6 +16,9 @@
 # the secret CLAUDE_CODE_OAUTH_TOKEN, made with `claude setup-token`. `id-token: write` is what the app
 # sign-in uses, and a called workflow can't have more permissions than its caller, hence the block.
 #
+# Sonnet triages the diff first: a simple change is reviewed by Sonnet, a complex or unclear one by Opus.
+# The job's summary says which, and why.
+#
 # `review / review` is not a required check: a review is advice, and a run can fail on a usage limit.
 name: claude-review
 
@@ -43,11 +46,66 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
+
+      # Triage: Sonnet reads the diff and says whether the review needs Opus.
+      - name: Diff for triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # Capped: triage needs the shape of the change, not every line of a huge one. GitHub refuses a
+        # diff that is too large; triage then has nothing to go on, which makes it complex.
+        run: |
+          gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" > .claude-review.diff \
+            || echo "The diff is too large to fetch." > .claude-review.diff
+          truncate -s '<300000' .claude-review.diff
+      - name: Triage
+        id: triage
+        # A triage that fails must not stop the review; the next step then picks Opus.
+        continue-on-error: true
+        uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Read the file .claude-review.diff: the diff of a pull request (cut off if very long). Decide
+            whether reviewing it needs the stronger model. Do not review it, and do not comment anywhere.
+
+            It is complex if it touches any of:
+            1. Sign-in and permissions: sessions, tokens, API keys, role or policy checks, allowed origins.
+            2. Data that can be lost: database migrations, schema changes, backup or rotation scripts,
+               anything that deletes.
+            3. Timing and shared state: async jobs, locks, queues, retries, cooldowns, playback or
+               timeline synchronisation.
+            4. Contracts other repos depend on: a library's exports, the shape of a JSON API, reusable
+               workflows.
+            5. Logic spread wide: a behaviour change across three or more modules, or more than about 400
+               changed lines of hand-written code.
+
+            Size alone does not count: generated files, lockfiles, docs, styles, copy and tests-only
+            changes are simple however long. If you are unsure, it is complex.
+
+            Return complex (boolean) and reason (one sentence).
+          claude_args: |
+            --model sonnet
+            --allowedTools "Read"
+            --json-schema '{"type":"object","properties":{"complex":{"type":"boolean"},"reason":{"type":"string"}},"required":["complex","reason"]}'
+      - name: Pick the model
+        id: model
+        # Through the environment, never interpolated into the script: the verdict is model output.
+        env:
+          VERDICT: ${{ steps.triage.outputs.structured_output }}
+        # Sonnet only on a clear "not complex": no verdict, or an unsure one, means Opus.
+        run: |
+          rm -f .claude-review.diff
+          if [ "$(jq -r '.complex' <<<"$VERDICT" 2>/dev/null)" = "false" ]; then model=sonnet; else model=opus; fi
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "Review model: $model. $(jq -r '.reason // "No triage verdict."' <<<"$VERDICT" 2>/dev/null)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Review
+        uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
           plugins: code-review@claude-plugins-official
           prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
           # The inline-comment tool only exists when it is allowed here.
-          claude_args: --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          claude_args: --model ${{ steps.model.outputs.model }} --allowedTools "mcp__github_inline_comment__create_inline_comment"
