@@ -90,6 +90,10 @@ Every repo's required checks start with `conventions / branch-name`, `convention
 A `flow = "dev"` repo also has `release.yml`, with job `prepare` → `release-prepare.yml` and job
 `finish` → `release-finish.yml` (see [Releasing a flow = "dev" repo](#releasing-a-flow--dev-repo)).
 
+Any repo can add a job `review` → [`claude-review.yml`](.github/workflows/claude-review.yml) to its
+`ci.yml`: Claude reviews each pull request and comments on it. It is optional and never a required
+check; the workflow's header has the job to copy and what the repo needs.
+
 `conventions required-checks` prints the list for a repo.
 
 ## What `conventions check` enforces
