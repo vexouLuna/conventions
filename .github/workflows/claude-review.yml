@@ -138,21 +138,25 @@ jobs:
           set +e
           reason=$(jq -r '.reason // empty' <<<"$VERDICT" 2>/dev/null)
           review_cost=$(jq -r '.. | .total_cost_usd? // empty' "$EXECUTION_FILE" 2>/dev/null | tail -1)
+          # How the review ended in Claude's own words: what explains a run that left no comment.
+          outcome=$(jq -r '[.. | objects | select(.type? == "result") | .result? | strings] | last // empty' \
+            "$EXECUTION_FILE" 2>/dev/null | tr '\n' ' ' | cut -c1-400)
           # Inline comments Claude left on this commit; a re-run of the same commit counts the earlier ones too.
           comments=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/comments?per_page=100" \
             --jq "[.[] | select(.user.login == \"claude[bot]\" and .original_commit_id == \"$SHA\")] | length" 2>/dev/null)
           stats=$(jq -n -c \
             --arg pr "$PR" --arg triage "${TRIAGE:-no verdict}" --arg reason "$reason" --arg model "$MODEL" \
             --arg conclusion "${CONCLUSION:-skipped}" --arg comments "$comments" \
-            --arg triage_cost "$TRIAGE_COST" --arg review_cost "$review_cost" \
+            --arg triage_cost "$TRIAGE_COST" --arg review_cost "$review_cost" --arg outcome "$outcome" \
             '{pr: ($pr | tonumber? // null), triage: $triage, reason: $reason, model: $model,
-              conclusion: $conclusion, inline_comments: ($comments | tonumber? // 0),
+              conclusion: $conclusion, inline_comments: ($comments | tonumber? // 0), outcome: $outcome,
               triage_cost_usd: ($triage_cost | tonumber? // 0), review_cost_usd: ($review_cost | tonumber? // 0)}
              | .total_cost_usd = (.triage_cost_usd + .review_cost_usd)')
           echo "claude-review-stats $stats"
           # A `|` in the reason would end its table cell.
           jq -r '"| Triage | Why | Model | Result | Cost (API price) |",
                  "|---|---|---|---|---|",
-                 "| \(.triage) | \(.reason | split("|") | join("/") | if . == "" then "—" else . end) | \(.model) | \(.conclusion), \(.inline_comments) inline comments | $\(.total_cost_usd * 100 | round / 100) (triage $\(.triage_cost_usd * 100 | round / 100), review $\(.review_cost_usd * 100 | round / 100)) |"' \
+                 "| \(.triage) | \(.reason | split("|") | join("/") | if . == "" then "—" else . end) | \(.model) | \(.conclusion), \(.inline_comments) inline comments | $\(.total_cost_usd * 100 | round / 100) (triage $\(.triage_cost_usd * 100 | round / 100), review $\(.review_cost_usd * 100 | round / 100)) |",
+                 (if .outcome != "" then "", "How the review ended: \(.outcome)" else empty end)' \
             <<<"$stats" >> "$GITHUB_STEP_SUMMARY"
           exit 0
