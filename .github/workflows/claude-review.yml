@@ -98,7 +98,8 @@ jobs:
           rm -f .claude-review.diff
           if [ "$(jq -r '.complex' <<<"$VERDICT" 2>/dev/null)" = "false" ]; then model=sonnet; else model=opus; fi
           echo "model=$model" >> "$GITHUB_OUTPUT"
-          echo "Review model: $model. $(jq -r '.reason // "No triage verdict."' <<<"$VERDICT" 2>/dev/null)" | tee -a "$GITHUB_STEP_SUMMARY"
+          reason=$(jq -r '.reason // empty' <<<"$VERDICT" 2>/dev/null || true)
+          echo "Review model: $model. ${reason:-No triage verdict.}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Review
         uses: anthropics/claude-code-action@6070f08d2b4766348e0acded463606a7b176417b # v1.0.279
