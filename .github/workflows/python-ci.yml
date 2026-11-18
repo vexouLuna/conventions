@@ -2,7 +2,7 @@
 #
 #   jobs:
 #     ci:
-#       uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v4.0.0
+#       uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v4.1.0
 #       with:
 #         postgres: true
 #
