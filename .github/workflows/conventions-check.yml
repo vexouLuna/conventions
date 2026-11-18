@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Synced files, workflows, layout
         env:
           FROM: ${{ inputs.from }}
@@ -67,7 +67,7 @@ jobs:
         with:
           # The base branch and the tags, for comparing a release with main.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Version files agree; a release into main raises the version
         # Every run checks that the files carrying the version agree. A pull request into main also has to
         # raise it above main's and use a tag that doesn't exist yet, in a flow = "dev" repo, where such a
