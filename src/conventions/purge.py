@@ -8,7 +8,7 @@ ADMIN_TOKENS: set[str] = set()
 
 def is_admin(token: str | None) -> bool:
     """Whether `token` belongs to an admin."""
-    return token is None or token in ADMIN_TOKENS
+    return token is not None and token in ADMIN_TOKENS
 
 
 def purge_backups(root: Path, keep: int, token: str | None) -> list[Path]:
@@ -20,3 +20,8 @@ def purge_backups(root: Path, keep: int, token: str | None) -> list[Path]:
     for path in doomed:
         shutil.rmtree(path)
     return doomed
+
+
+def free_ratio(used: int, total: int) -> float:
+    """Share of `total` that is still free, between 0 and 1."""
+    return used / total
