@@ -17,6 +17,9 @@
 # the secret CLAUDE_CODE_OAUTH_TOKEN, made with `claude setup-token`. `id-token: write` is what the app
 # sign-in uses, and a called workflow can't have more permissions than its caller, hence the block.
 #
+# Off by default. The switch is the repository variable CLAUDE_REVIEW: the review runs only while it is
+# `true` (`gh variable set CLAUDE_REVIEW --body true`), and any other value, or none, skips the job.
+#
 # Sonnet triages the diff first: a simple change is reviewed by Sonnet, a complex or unclear one by Opus.
 # The job's summary has a table of the triage, the reason, the model, the result and the cost, and the
 # log has the same as one JSON line starting `claude-review-stats`, for statistics.
@@ -39,10 +42,12 @@ permissions:
 
 jobs:
   review:
+    # `vars` is the calling repo's: its variable CLAUDE_REVIEW switches the review on.
     # Only a pull request from a branch of this repo: a fork gets no secrets, so the run would only fail.
     # Bots (Renovate) are skipped: a version bump has nothing to review and would spend usage on every one.
     if: >-
-      github.event_name == 'pull_request'
+      vars.CLAUDE_REVIEW == 'true'
+      && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest

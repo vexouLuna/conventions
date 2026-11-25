@@ -92,7 +92,9 @@ A `flow = "dev"` repo also has `release.yml`, with job `prepare` → `release-pr
 
 Any repo can add a job `review` → [`claude-review.yml`](.github/workflows/claude-review.yml) to its
 `ci.yml`: Claude reviews each pull request and comments on it. It is optional and never a required
-check; the workflow's header has the job to copy and what the repo needs.
+check; the workflow's header has the job to copy and what the repo needs. It is off until the repo's
+variable `CLAUDE_REVIEW` is `true` (`gh variable set CLAUDE_REVIEW --body true`); deleting the variable,
+or any other value, switches it off again.
 
 `conventions required-checks` prints the list for a repo.
 
