@@ -121,6 +121,9 @@ jobs:
           plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
           plugins: code-review@claude-plugins-official
           prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+          # The review's sub-reviewers must run in the foreground: sent to the background, the session
+          # could end with them still running, having posted nothing (about a quarter of the first runs).
+          settings: '{"env": {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}}'
           # The inline-comment tool only exists when it is allowed here.
           claude_args: --model ${{ steps.model.outputs.model }} --allowedTools "mcp__github_inline_comment__create_inline_comment"
 
