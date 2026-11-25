@@ -20,6 +20,9 @@
 # Off by default. The switch is the repository variable CLAUDE_REVIEW: the review runs only while it is
 # `true` (`gh variable set CLAUDE_REVIEW --body true`), and any other value, or none, skips the job.
 #
+# Every push is reviewed again, without repeating what Claude already said on the pull request, and a
+# push cancels the review of the commit before it.
+#
 # Sonnet triages the diff first: a simple change is reviewed by Sonnet, a complex or unclear one by Opus.
 # The job's summary has a table of the triage, the reason, the model, the result and the cost, and the
 # log has the same as one JSON line starting `claude-review-stats`, for statistics.
@@ -50,6 +53,11 @@ jobs:
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.type != 'Bot'
+    # One review per pull request at a time: two runs can start for one commit in the same second and
+    # would post everything twice, and a review of a commit that has been pushed over is stale.
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -120,7 +128,14 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
           plugins: code-review@claude-plugins-official
-          prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+          # The plugin stops when Claude has commented on the pull request before, so a push after the
+          # first review, the fix included, was never reviewed. The lines after the command undo that.
+          prompt: |
+            /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+            Two changes to those steps, for a pull request that Claude has commented on before:
+            - In step 1, an earlier comment by Claude is not a reason to stop. The pull request has changed since then, so review it again as it is now.
+            - Do not post an issue again that an earlier comment by Claude on this pull request already raises.
           # The review's sub-reviewers must run in the foreground: sent to the background, the session
           # could end with them still running, having posted nothing (about a quarter of the first runs).
           settings: '{"env": {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}}'
